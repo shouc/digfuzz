@@ -179,7 +179,7 @@ def dump_execution_tree():
 def build_execution_tree():
     current_check_corpus_files = set(os.listdir(CORPUS_DIR)).difference(ALREADY_VISITED_CORPUS_FILE)
     for i in current_check_corpus_files:
-        ALREADY_VISITED_CORPUS_FILE.add(i)
+
         if i[0] == ".":
             continue
         with open(f"{CORPUS_DIR}/{i}", "rb") as fp:
