@@ -1,0 +1,1 @@
+QEMU_TIMEOUT = 30
