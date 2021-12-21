@@ -34,9 +34,11 @@ class STDINExecutorQEMU:
 
 
 class QEMUInstr(instr_interface.Instrumentation):
-    def __init__(self, executor):
+    def __init__(self, executor, dumper_path, shm_key="/digfuzz"):
         super().__init__(executor)
         self.corpus_traces = {}
+        self.dumper_path = dumper_path
+        self.shm_key = shm_key
         self.visited_trace = set()
 
     def __add_to_execution_tree(self, trace, file_name):
@@ -58,7 +60,7 @@ class QEMUInstr(instr_interface.Instrumentation):
 
     def __build_execution_tree(self, new_testcase_filenames):
         for filename in new_testcase_filenames:
-            if i[0] == ".":
+            if filename[0] == ".":
                 continue
             with open(filename, "rb") as fp:
                 corpus_content = fp.read()
@@ -70,14 +72,20 @@ class QEMUInstr(instr_interface.Instrumentation):
                 self.corpus_traces[filename] = trace
                 self.__add_to_execution_tree(trace, filename)
 
+    def __add_qemu_bb_dumper_out_to_tree(self, content):
+        for line in content.split("\n"):
+            line_arr = line.split(",")
+            pc, counter = line_arr[0], line_arr[1]
+            self.execution_tree[pc].visit_count = counter
+
+    def call_dumper(self):
+        return pwn.process(self.dumper_path, env={
+            "DIGFUZZ_SHM": self.shm_key
+        }).recvall(timeout=config.QEMU_TIMEOUT)
+
     def __increment_tree_visit_count(self):
-        current_check_trace_files = set(self.corpus_traces.keys()).difference(self.visited_trace)
-        for filename in current_check_trace_files:
-            for addr in self.corpus_traces[filename]:
-                if addr not in self.execution_tree:
-                    print("[Fuzzer] Fuzzer found a new path but did not add it to corpus")
-                    continue
-                self.execution_tree[addr].visit_count += 1
+        content = self.call_dumper()
+        self.__add_qemu_bb_dumper_out_to_tree(content)
 
     def build_execution_tree(self, new_testcase_filenames):
         self.__build_execution_tree(new_testcase_filenames)
