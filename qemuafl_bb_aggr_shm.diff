@@ -1,0 +1,119 @@
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index bedf41b51d..43b0b57e8e 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -53,7 +53,19 @@
+ #ifndef AFL_QEMU_STATIC_BUILD
+   #include <dlfcn.h>
+ #endif
+-
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <sys/time.h>
++#include <sys/types.h>
++#include <unistd.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdint.h>
++#include <sys/types.h>
+ /***************************
+  * VARIOUS AUXILIARY STUFF *
+  ***************************/
+@@ -305,7 +317,39 @@ static void afl_map_shm_fuzz(void) {
+ 
+ }
+ 
++
++struct digfuzz_bucket
++{
++	uint32_t PC;
++  uint32_t count;
++};
++
++typedef struct digfuzz_bucket digfuzz_bucket_t;
++
++#define HASHMAP_SIZE 1000000
++
++
++#define SHM_SIZE (HASHMAP_SIZE*sizeof(digfuzz_bucket_t))
++
++digfuzz_bucket_t* digfuzz_hitcounts;
++
+ void afl_setup(void) {
++  // digfuzz instrumentation
++
++  // create hashmap
++  char* shm_key_df = getenv("DIGFUZZ_SHM");
++  printf("digfuzz init");
++  if (shm_key_df){
++   int fd = shm_open(shm_key_df, O_RDWR | O_CREAT, S_IREAD | S_IWRITE);
++    if (fd <= -1) {
++      fprintf(stderr, "[DigFuzz] Failed to create shared memory region\n");
++      return -1;
++    }
++    ftruncate(fd, SHM_SIZE);
++    digfuzz_hitcounts = mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
++    close(fd);
++  }
++  // done
+ 
+   char *id_str = getenv(SHM_ENV_VAR), *inst_r = getenv("AFL_INST_RATIO");
+ 
+diff --git a/accel/tcg/tcg-runtime.h b/accel/tcg/tcg-runtime.h
+index 754d54a9a7..229540a4a3 100644
+--- a/accel/tcg/tcg-runtime.h
++++ b/accel/tcg/tcg-runtime.h
+@@ -355,3 +355,5 @@ DEF_HELPER_FLAGS_2(qasan_store4, TCG_CALL_NO_RWG, void, env, tl)
+ DEF_HELPER_FLAGS_2(qasan_store8, TCG_CALL_NO_RWG, void, env, tl)
+ DEF_HELPER_FLAGS_1(qasan_shadow_stack_push, TCG_CALL_NO_RWG, void, tl)
+ DEF_HELPER_FLAGS_1(qasan_shadow_stack_pop, TCG_CALL_NO_RWG, void, tl)
++
++DEF_HELPER_FLAGS_1(digfuzz_cnt, TCG_CALL_NO_RWG, void, tl)
+diff --git a/accel/tcg/translate-all.c b/accel/tcg/translate-all.c
+index 2fa6b0a851..871a519390 100644
+--- a/accel/tcg/translate-all.c
++++ b/accel/tcg/translate-all.c
+@@ -71,8 +71,28 @@
+ 
+ __thread int cur_block_is_good;
+ 
+-void HELPER(afl_maybe_log)(target_ulong cur_loc) {
++#define HASHMAP_HASH_INIT 2166136261u
++#define HASHMAP_SIZE 1000000
++
++struct digfuzz_bucket
++{
++	uint32_t PC;
++  uint32_t count;
++};
++
++typedef struct digfuzz_bucket digfuzz_bucket_t;
++
+ 
++extern digfuzz_bucket_t* digfuzz_hitcounts;
++
++void HELPER(digfuzz_cnt)(target_ulong cur_loc) {
++    // printf("%d\n", cur_loc);
++  uint32_t cur_loc_hash = cur_loc % HASHMAP_SIZE;
++  digfuzz_hitcounts[cur_loc_hash].PC = cur_loc;
++  digfuzz_hitcounts[cur_loc_hash].count++;
++}
++
++void HELPER(afl_maybe_log)(target_ulong cur_loc) {
+   register uintptr_t afl_idx = cur_loc ^ afl_prev_loc;
+ 
+   INC_AFL_AREA(afl_idx);
+@@ -100,7 +120,8 @@ static void afl_gen_trace(target_ulong cur_loc) {
+ 
+   if (!cur_block_is_good)
+     return;
+-
++  if (digfuzz_hitcounts)
++    gen_helper_digfuzz_cnt(tcg_const_tl(cur_loc));
+   /* Looks like QEMU always maps to fixed locations, so ASLR is not a
+      concern. Phew. But instruction addresses may be aligned. Let's mangle
+      the value to get something quasi-uniform. */
