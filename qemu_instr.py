@@ -65,12 +65,20 @@ class QEMUInstr(instr_interface.Instrumentation):
 
     def __add_to_execution_tree(self, trace, file_name):
         last_node = None
+        last_addr = 0
         for addr in trace:
             if addr not in self.execution_tree:
                 self.execution_tree[addr] = instr_interface.Node()
                 self.execution_tree[addr].addr = addr
                 if addr not in self.__non_comp_bb:
                     self.execution_tree[addr].is_comp = True
+                self.execution_tree[addr].addr_range = (0, 1e10)
+            # refine addr range
+            addr_range = self.execution_tree[addr].addr_range
+            if addr_range[1] - addr_range[0] >  addr - last_addr:
+                self.execution_tree[addr].addr_range = (last_addr, addr)
+            last_addr = addr
+
             current_node = self.execution_tree[addr]
             if last_node is not None and (last_node.left != current_node and last_node.right != current_node):
                 if last_node.left is None:
