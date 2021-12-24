@@ -12,10 +12,13 @@ static uint8_t AflInputBuf[kMaxAflInputSize];
 
 int main(int argc, char **argv) {
     if (LLVMFuzzerInitialize) LLVMFuzzerInitialize(&argc, &argv);
-    while (1) {
+    if (argc > 1) {  // for afl
         size_t l = read(0, AflInputBuf, kMaxAflInputSize);
         LLVMFuzzerTestOneInput(AflInputBuf, l);
-        printf("EXECDONE\n");
-    }
-
+    } else
+        while (1) { // for qsym
+            size_t l = read(0, AflInputBuf, kMaxAflInputSize);
+            LLVMFuzzerTestOneInput(AflInputBuf, l);
+            printf("EXECDONE\n");
+        }
 }

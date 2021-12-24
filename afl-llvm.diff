@@ -1,0 +1,444 @@
+diff --git a/instrumentation/afl-compiler-rt.o.c b/instrumentation/afl-compiler-rt.o.c
+index 2089ce7..847922d 100644
+--- a/instrumentation/afl-compiler-rt.o.c
++++ b/instrumentation/afl-compiler-rt.o.c
+@@ -1238,41 +1238,46 @@ __attribute__((constructor(0))) void __afl_auto_first(void) {
+ 
+    The first function (__sanitizer_cov_trace_pc_guard) is called back on every
+    edge (as opposed to every basic block). */
+-
++#define instr_code
++#include "preach.h"
++//#include "../preach_util.h"
+ void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
++  if (__afl_debug) {
++    fprintf(stderr,
++            "preach2\n");
++  }
++  pc_trace_guard__preach(guard);
+ 
+   // For stability analysis, if you want to know to which function unstable
+   // edge IDs belong - uncomment, recompile+install llvm_mode, recompile
+   // the target. libunwind and libbacktrace are better solutions.
+   // Set AFL_DEBUG_CHILD=1 and run afl-fuzz with 2>file to capture
+   // the backtrace output
+-  /*
+-  uint32_t unstable[] = { ... unstable edge IDs };
+-  uint32_t idx;
+-  char bt[1024];
+-  for (idx = 0; i < sizeof(unstable)/sizeof(uint32_t); i++) {
+-
+-    if (unstable[idx] == __afl_area_ptr[*guard]) {
+-
+-      int bt_size = backtrace(bt, 256);
+-      if (bt_size > 0) {
+-
+-        char **bt_syms = backtrace_symbols(bt, bt_size);
+-        if (bt_syms) {
+-
+-          fprintf(stderr, "DEBUG: edge=%u caller=%s\n", unstable[idx],
+-  bt_syms[0]);
+-          free(bt_syms);
+-
+-        }
++//  uint32_t unstable[] = { ... unstable edge IDs };
++//  uint32_t idx;
++//  char bt[1024];
++//  for (idx = 0; i < sizeof(unstable)/sizeof(uint32_t); i++) {
++//
++//    if (unstable[idx] == __afl_area_ptr[*guard]) {
++//
++//      int bt_size = backtrace(bt, 256);
++//      if (bt_size > 0) {
++//
++//        char **bt_syms = backtrace_symbols(bt, bt_size);
++//        if (bt_syms) {
++//
++//          fprintf(stderr, "DEBUG: edge=%u caller=%s\n", unstable[idx],
++//  bt_syms[0]);
++//          free(bt_syms);
++//
++//        }
++//
++//      }
++//
++//    }
++//
++//  }
+ 
+-      }
+-
+-    }
+-
+-  }
+-
+-  */
+ 
+ #if (LLVM_VERSION_MAJOR < 9)
+ 
+@@ -1292,7 +1297,7 @@ void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
+    still touch the bitmap, but in a fairly harmless way. */
+ 
+ void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop) {
+-
++1;
+   u32   inst_ratio = 100;
+   char *x;
+ 
+@@ -1309,7 +1314,7 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop) {
+   }
+ 
+   if (start == stop || *start) return;
+-
++  pc_trace_guard_init__preach();
+   x = getenv("AFL_INST_RATIO");
+   if (x) inst_ratio = (u32)atoi(x);
+ 
+@@ -1638,69 +1643,114 @@ void __cmplog_ins_hook16(uint128_t arg1, uint128_t arg2, uint8_t attr) {
+ 
+ #endif
+ 
++//void __sanitizer_cov_trace_cmp1(uint8_t arg1, uint8_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//  __cmplog_ins_hook1(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_const_cmp1(uint8_t arg1, uint8_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook1(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_cmp2(uint16_t arg1, uint16_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook2(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_const_cmp2(uint16_t arg1, uint16_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook2(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_cmp4(uint32_t arg1, uint32_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook4(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_cost_cmp4(uint32_t arg1, uint32_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook4(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_cmp8(uint64_t arg1, uint64_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook8(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_const_cmp8(uint64_t arg1, uint64_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook8(arg1, arg2, 0);
++//
++//}
++//
++//#ifdef WORD_SIZE_64
++//void __sanitizer_cov_trace_cmp16(uint128_t arg1, uint128_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook16(arg1, arg2, 0);
++//
++//}
++//
++//void __sanitizer_cov_trace_const_cmp16(uint128_t arg1, uint128_t arg2) {
++//  trace_cmp__preach(arg1, arg2);
++//
++//  __cmplog_ins_hook16(arg1, arg2, 0);
++//
++//}
++
++//#endif
+ void __sanitizer_cov_trace_cmp1(uint8_t arg1, uint8_t arg2) {
+-
+-  __cmplog_ins_hook1(arg1, arg2, 0);
+-
+-}
+-
+-void __sanitizer_cov_trace_const_cmp1(uint8_t arg1, uint8_t arg2) {
+-
+-  __cmplog_ins_hook1(arg1, arg2, 0);
+-
++  trace_cmp__preach();
+ }
+ 
+ void __sanitizer_cov_trace_cmp2(uint16_t arg1, uint16_t arg2) {
+-
+-  __cmplog_ins_hook2(arg1, arg2, 0);
+-
+-}
+-
+-void __sanitizer_cov_trace_const_cmp2(uint16_t arg1, uint16_t arg2) {
+-
+-  __cmplog_ins_hook2(arg1, arg2, 0);
++  trace_cmp__preach();
+ 
+ }
+ 
+ void __sanitizer_cov_trace_cmp4(uint32_t arg1, uint32_t arg2) {
+-
+-  __cmplog_ins_hook4(arg1, arg2, 0);
+-
+-}
+-
+-void __sanitizer_cov_trace_cost_cmp4(uint32_t arg1, uint32_t arg2) {
+-
+-  __cmplog_ins_hook4(arg1, arg2, 0);
++  trace_cmp__preach();
+ 
+ }
+ 
+ void __sanitizer_cov_trace_cmp8(uint64_t arg1, uint64_t arg2) {
+-
+-  __cmplog_ins_hook8(arg1, arg2, 0);
+-
++  trace_cmp__preach();
+ }
+ 
+-void __sanitizer_cov_trace_const_cmp8(uint64_t arg1, uint64_t arg2) {
++void __sanitizer_cov_trace_const_cmp1(uint8_t arg1, uint8_t arg2){
++  trace_cmp__preach();
+ 
+-  __cmplog_ins_hook8(arg1, arg2, 0);
+ 
+ }
++void __sanitizer_cov_trace_const_cmp2(uint16_t arg1, uint16_t arg2){
++  trace_cmp__preach();
+ 
+-#ifdef WORD_SIZE_64
+-void __sanitizer_cov_trace_cmp16(uint128_t arg1, uint128_t arg2) {
+-
+-  __cmplog_ins_hook16(arg1, arg2, 0);
+ 
+ }
++void __sanitizer_cov_trace_const_cmp4(uint32_t arg1, uint32_t arg2){
++  trace_cmp__preach();
+ 
+-void __sanitizer_cov_trace_const_cmp16(uint128_t arg1, uint128_t arg2) {
+-
+-  __cmplog_ins_hook16(arg1, arg2, 0);
+ 
+ }
++void __sanitizer_cov_trace_const_cmp8(uint64_t arg1, uint64_t arg2){
++  trace_cmp__preach();
+ 
+-#endif
+-
++}
+ void __sanitizer_cov_trace_switch(uint64_t val, uint64_t *cases) {
+ 
+   if (unlikely(!__afl_cmp_map)) return;
+diff --git a/instrumentation/preach.h b/instrumentation/preach.h
+index f4909d6..a43f218 100644
+--- a/instrumentation/preach.h
++++ b/instrumentation/preach.h
+@@ -4,5 +4,74 @@
+ 
+ #ifndef AFL_BUILD_PREACH_H
+ #define AFL_BUILD_PREACH_H
++#include <sys/ipc.h>
++#include <sys/shm.h>
++#include <stdbool.h>
++
++
++
++struct DCP3_node {
++  void* addr;
++  uint16_t left;
++  uint16_t right;
++  bool is_compare;
++  long long visit_time;
++  uint32_t traversal_depth;
++  bool is_exit_node;
++};
++
++struct DCP3_node* DCP3[100000];
++
++uint16_t last_visited_dcp3_node = UINT16_MAX;
++
++
++void pc_trace_guard_init__preach(){
++
++}
++
++void pc_trace_guard__preach(uint32_t* guard){
++  assert(*guard < 100000);
++  printf("guard");
++  if (DCP3[*guard] == NULL){
++    DCP3[*guard] = malloc(sizeof(struct DCP3_node));
++    DCP3[*guard]->addr = __builtin_return_address(0);
++    DCP3[*guard]->is_compare = false;
++    DCP3[*guard]->left = UINT16_MAX;
++    DCP3[*guard]->right = UINT16_MAX;
++    DCP3[*guard]->visit_time = 1;
++  } else {
++    if (last_visited_dcp3_node != UINT16_MAX){
++      struct DCP3_node* last_node = DCP3[last_visited_dcp3_node];
++      if (last_node->left != *guard && last_node->right != *guard){
++        if (last_node->left == UINT16_MAX)
++          last_node->left = *guard;
++        else if (last_node->right == UINT16_MAX)
++          last_node->right = *guard;
++        else
++          assert(0); // ??? getting three children?
++      }
++    }
++    DCP3[*guard]->visit_time++;
++  }
++  last_visited_dcp3_node = *guard;
++}
++
++
++
++void trace_cmp__preach(){
++  printf("cmp3");
++  if (last_visited_dcp3_node != UINT16_MAX)
++    DCP3[last_visited_dcp3_node]->is_compare = true;
++}
++
++void traversal_helper(){
++
++}
++
++void calculate_prob_all_path(){
++
++}
+ 
+ #endif  // AFL_BUILD_PREACH_H
++
++
+diff --git a/preach_util.h b/preach_util.h
+index bd24e5b..2013b12 100644
+--- a/preach_util.h
++++ b/preach_util.h
+@@ -4,5 +4,28 @@
+ 
+ #ifndef AFL_BUILD_PREACH_UTIL_H
+ #define AFL_BUILD_PREACH_UTIL_H
++#include <stdbool.h>
++struct DCP3_node {
++  void* addr;
++  uint16_t left;
++  uint16_t right;
++  bool is_compare;
++  long long visit_time;
++  uint32_t traversal_depth;
++  bool is_exit_node;
++};
+ 
++
++extern struct DCP3_node* DCP3[100000];
++extern uint16_t last_visited_dcp3_node;
++void start__preach(){
++
++}
++
++
++void commit_instr__preach(){
++  if (last_visited_dcp3_node != UINT16_MAX){
++    DCP3[last_visited_dcp3_node]->is_exit_node = true;
++  }
++}
+ #endif  // AFL_BUILD_PREACH_UTIL_H
+diff --git a/src/afl-cc.c b/src/afl-cc.c
+index 486f746..d6580e5 100644
+--- a/src/afl-cc.c
++++ b/src/afl-cc.c
+@@ -587,7 +587,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
+ 
+ #if LLVM_MAJOR > 10 || (LLVM_MAJOR == 10 && LLVM_MINOR > 0)
+   #if defined __ANDROID__ || ANDROID
+-        cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard";
++        cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard,trace-cmp,no-prune";
+         instrument_mode = INSTRUMENT_LLVMNATIVE;
+   #else
+         if (have_instr_list) {
+@@ -597,7 +597,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
+                 "Using unoptimized trace-pc-guard, due usage of "
+                 "-fsanitize-coverage-allow/denylist, you can use "
+                 "AFL_LLVM_ALLOWLIST/AFL_LLMV_DENYLIST instead.\n");
+-          cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard";
++          cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard,trace-cmp,no-prune";
+           instrument_mode = INSTRUMENT_LLVMNATIVE;
+ 
+         } else {
+@@ -617,7 +617,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
+           SAYF(
+               "Using unoptimized trace-pc-guard, upgrade to llvm 10.0.1+ for "
+               "enhanced version.\n");
+-        cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard";
++        cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard,trace-cmp,no-prune";
+         instrument_mode = INSTRUMENT_LLVMNATIVE;
+   #else
+         FATAL("pcguard instrumentation requires llvm 4.0.1+");
+@@ -627,7 +627,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
+       } else if (instrument_mode == INSTRUMENT_LLVMNATIVE) {
+ 
+ #if LLVM_MAJOR >= 4
+-        cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard";
++        cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard,trace-cmp,no-prune";
+ #else
+         FATAL("pcguard instrumentation requires llvm 4.0.1+");
+ #endif
+diff --git a/utils/aflpp_driver/aflpp_driver.c b/utils/aflpp_driver/aflpp_driver.c
+index c094c42..f5897f9 100644
+--- a/utils/aflpp_driver/aflpp_driver.c
++++ b/utils/aflpp_driver/aflpp_driver.c
+@@ -171,6 +171,8 @@ size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize) {
+ }
+ 
+ // Execute any files provided as parameters.
++#include "../../preach_util.h"
++
+ static int ExecuteFilesOnyByOne(int argc, char **argv) {
+ 
+   unsigned char *buf = (unsigned char *)malloc(MAX_FILE);
+@@ -189,6 +191,7 @@ static int ExecuteFilesOnyByOne(int argc, char **argv) {
+ 
+       printf("Reading %zu bytes from %s\n", length, argv[i]);
+       LLVMFuzzerTestOneInput(buf, length);
++      commit_instr__preach();
+       printf("Execution successful.\n");
+ 
+     }
+@@ -229,6 +232,7 @@ int main(int argc, char **argv) {
+     sleep(1);
+ 
+   }
++  start__preach();
+ 
+   output_file = stderr;
+   maybe_duplicate_stderr();
+@@ -299,11 +303,10 @@ int main(int argc, char **argv) {
+ 
+       num_runs++;
+       LLVMFuzzerTestOneInput(__afl_fuzz_ptr, *__afl_fuzz_len);
+-
++      commit_instr__preach();
+     }
+ 
+   }
+-
+   printf("%s: successfully executed %d input(s)\n", argv[0], num_runs);
+ 
+ }

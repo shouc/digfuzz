@@ -30,7 +30,7 @@ index bedf41b51d..43b0b57e8e 100644
 +
 +struct digfuzz_bucket
 +{
-+	uint32_t PC;
++	unsigned long int PC;
 +  uint32_t count;
 +};
 +
@@ -87,7 +87,7 @@ index 2fa6b0a851..871a519390 100644
 +
 +struct digfuzz_bucket
 +{
-+	uint32_t PC;
++	unsigned long int PC;
 +  uint32_t count;
 +};
 +

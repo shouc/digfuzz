@@ -17,7 +17,7 @@ index 2fa6b0a851..189e8f211f 100644
  __thread int cur_block_is_good;
  
 +void HELPER(digfuzz_cnt)(target_ulong cur_loc) {
-+  printf("digfuzz@%d\n", cur_loc);
++  printf("digfuzz@%lu\n", cur_loc);
 +}
 +
  void HELPER(afl_maybe_log)(target_ulong cur_loc) {

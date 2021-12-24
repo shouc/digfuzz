@@ -5,6 +5,28 @@ import re
 import os
 
 
+# CONFIGS
+
+# LOCAL: afl-fuzz + tree.py
+# REMOTE: qsym
+#
+# REMOTE and LOCAL should have same copy of code
+#
+# LOCAL SETUP:
+#   mkdir /tmp/digfuzz
+#   clang -fsanitize-coverage=bb,trace-pc-guard,indirect-calls,\
+#       trace-cmp,no-prune -fsanitize=address -g test.cc FuzzingEngine.a -o test.fuzz
+# LOCAL AFL CMD:
+#   AFL_SKIP_CPUFREQ=1 ./afl-fuzz -i in/ -o out/ -M f1 ./test.fuzz
+#   AFL_SKIP_CPUFREQ=1 ./afl-fuzz -i in/ -o out/ -S f2 ./test.fuzz
+
+# REMOTE SETUP:
+# build qsym ...
+# build uninstrumented bin:
+#   clang -c -g angr_harness.c -o angr_harness.o
+#   clang -g angr_harness.o test.cc -o test.angr
+
+
 class STDINExecutorLLVM:
     EXTRACT_START = re.compile(b"starts at address 0x(.+?) ")
     EXTRACT_END = re.compile(b"and ends at 0x(.+?) ")

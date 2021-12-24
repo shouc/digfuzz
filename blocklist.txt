@@ -1,0 +1,2 @@
+fun:main
+fun:trace_cmp__preach

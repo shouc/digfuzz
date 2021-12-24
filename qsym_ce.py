@@ -38,7 +38,6 @@ def solve_smt(smt):
     s.from_string(smt)
     try:
         s.check()
-
         m = s.model()
         result = []
         for d in m.decls():
@@ -133,11 +132,11 @@ class QSYMConcolicExecutor:
             yield to_smt2(bvs, path + b'\n' + negate_smt2(cmp_constraints[pc]))
 
     # conduct concolic execution and flip constraints in flip_pc_range while preserving others
-    def flip_it(self, testcase_content, flip_pc_range):
-        flip_pc_range = [config.REMOTE_LOAD_ADDRESS + x for x in flip_pc_range]
+    def flip_it(self, testcase_content, flip_pc_range, qemu_instr_obj=None, testcase_fn=None):
         result = self.__get_result(testcase_content)
         print(result)
         bvs, cmp_constraint = self.__parse_output(result)
+        has_solution = False
 
         for to_be_solved in self.__get_constraint(flip_pc_range, bvs, cmp_constraint):
             if len(to_be_solved) == 0:
@@ -147,7 +146,11 @@ class QSYMConcolicExecutor:
             solution = solve_smt(to_be_solved)
             if not solution:
                 continue
-            print(solution)
+            print(f"[QSYM] SAT: {to_be_solved}")
+            has_solution = True
+            yield solution
+        if not has_solution and qemu_instr_obj and testcase_fn:
+            qemu_instr_obj.add_unsolvable_path(testcase_fn, flip_pc_range)
 
 
 if __name__ == "__main__":
@@ -158,12 +161,12 @@ if __name__ == "__main__":
     os.system(f"gcc -c {code_loc} -no-pie -o {code_loc}.o")
 
     utils.setup()
-    utils.compile_qsym_harness(f"{code_loc}.o")
+    utils.compile_harness(f"{code_loc}.o")
 
     uninstrumented_executable = "/tmp/qsym_harness"
 
-    utils.copy_file_to_qsym_host("qsym_harness", uninstrumented_executable)
+    utils.copy_file_to_qsym_host("harness", uninstrumented_executable)
     utils.qsym_host_provide_permission(uninstrumented_executable)
 
     qsym = QSYMConcolicExecutor(uninstrumented_executable)
-    print(qsym.flip_it(b"abcdeffx", [0x12b7, 0x12be]))
+    print(qsym.flip_it(b"abcdeffx", [0x40000 + x for x in [0x12b7, 0x12be]]))
