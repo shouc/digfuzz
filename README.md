@@ -27,7 +27,7 @@ python3 run_afl.py
 ```
 In another terminal (QSYM stuffs)
 ```bash
-python3 main.py
+python3 digfuzz.py
 ```
 
 

@@ -1,3 +1,4 @@
+import re
 import time
 
 import config
@@ -13,7 +14,7 @@ def remove_assert(string):
         if met_assert and string[cter] == 40:
             string = string[cter:]
             break
-        if string[cter] == 40 and string[cter+1:cter+7] == b'assert':  # b'('
+        if string[cter] == 40 and string[cter + 1:cter + 7] == b'assert':  # b'('
             met_assert = True
             continue
     cter = len(string)
@@ -26,24 +27,41 @@ def remove_assert(string):
 
 
 def negate_smt2(string):
-    print("="*30)
-    print(string)
-    print("="*30)
     string = remove_assert(string)
     return f'(assert (not {string.decode("utf-8")}))'.encode('utf-8')
 
 
-def solve_smt(smt):
+def get_bv_value(smt):
+    match_res = re.compile(r"(k![0-9]+) \(\)").findall(smt)
+    if len(match_res) < 1:
+        assert False, "Can't find declare-fun"
+    return sorted(list(set([int(x.replace("k!", "")) for x in match_res])))
+
+
+def solve_smt(smt, orig):
+    if type(orig) == bytes:
+        orig = [x for x in orig]
+    else:
+        orig = [ord(x) for x in orig]
     s = z3.Solver()
+    s.set("timeout", config.QSYM_TIMEOUT)
     s.from_string(smt)
+    bvs = get_bv_value(smt)
     try:
         s.check()
         m = s.model()
         result = []
+        known = set()
         for d in m.decls():
-            result.append([d.name(), m[d]])
-        result = sorted(result, key=lambda x: x[0])
-        return bytes([int(x[1].__str__()) for x in result])
+            known.add(d.name())
+            result.append((int(d.name().replace('k!', "")), m[d]))
+        for idx, sol in result:
+            idx = bvs.index(idx)
+            if idx >= len(orig):
+                print(idx, len(orig))
+                continue
+            orig[idx] = int(sol.__str__())
+        return bytes(orig)
     except Exception as e:
         print(f"[Solver] UNSAT {e}")
 
@@ -62,26 +80,38 @@ class QSYMConcolicExecutor:
         self.cmp_constraint = {}
         self.execution_tree = None
         self.qsym_instance = None
-        self.__run_qsym_remote()
+        self.__run_qsym()
 
     def update_exec_tree(self, tree):
         self.execution_tree = tree
 
-    def __run_qsym_remote(self):
-        config.QSYM_SSH_CONN.process(["mkdir", "in"])
-        config.QSYM_SSH_CONN.process(["mkdir", "out"])
-        self.qsym_instance = config.QSYM_SSH_CONN.process([config.PIN_SH, '-ifeellucky', '-t',
-                                                           config.QSYM_OBJECT_PATH, '-i', 'in', '-o', 'out', '--',
-                                                           self.uninstrumented_executable])
+    def __run_qsym(self):
+        if config.USE_SSH:
+            config.QSYM_SSH_CONN.process(["mkdir", "in"])
+            config.QSYM_SSH_CONN.process(["mkdir", "out"])
+            self.qsym_instance = config.QSYM_SSH_CONN.process([config.PIN_SH, '-ifeellucky', '-t',
+                                                               config.QSYM_OBJECT_PATH, '-i', 'in', '-o', 'out', '--',
+                                                               self.uninstrumented_executable])
+        else:
+            self.qsym_instance = config.QSYM_SSH_CONN.process(config.QSYM_CMD + [config.PIN_SH, '-ifeellucky', '-t',
+                                                                                 config.QSYM_OBJECT_PATH, '-i',
+                                                                                 '/tmp/in', '-o',
+                                                                                 '/tmp/out', '--',
+                                                                                 uninstrumented_executable])
         self.qsym_instance.recvuntil(b"[INFO] IMG: /lib/x86_64-linux-gnu/libc.so.6")
         print("[QSYM] Ready")
 
     def __get_result(self, corpus_content):
-        self.qsym_instance.sendline(corpus_content)
-        start_time = time.time()
-        result = self.qsym_instance.recvuntil("EXECDONE", timeout=config.QSYM_TIMEOUT)
-        end_time = time.time()
-        print(f"[QSYM] Spent {end_time - start_time}s dumping constraints")
+        try:
+            self.qsym_instance.sendline(corpus_content)
+            start_time = time.time()
+            result = self.qsym_instance.recvuntil("EXECDONE", timeout=config.QSYM_TIMEOUT)
+            end_time = time.time()
+            print(f"[QSYM] Spent {end_time - start_time}s dumping constraints")
+        except EOFError as e:
+            print(f"[QSYM] Crashed, ignoring content {corpus_content}")
+            self.__run_qsym()
+            return b''
         return result
 
     @staticmethod
@@ -117,40 +147,47 @@ class QSYMConcolicExecutor:
 
     # get a list of [cmp constraints] that has pc in pc_wanted_range
     @staticmethod
-    def __find_last_cmp_pc(cmp_constraints: dict, pc_wanted_range):
+    def __find_last_cmp_pc(cmp_constraints: dict, pc_wanted_range, nth=0):
         result = []
+        current_in_range_max = -1
         for pc in cmp_constraints:
             if pc_wanted_range[0] < pc < pc_wanted_range[1]:
-                result.append(pc)
+                if pc < current_in_range_max:
+                    nth -= 1
+                current_in_range_max = max(pc, current_in_range_max)
+                if nth == 0:
+                    result.append(pc)
         return result
 
     # find a path node to stop => find a cmp cons => flip cmp cons & concat
-    def __get_constraint(self, flip_pc_range, bvs, cmp_constraints):
-        cmp_cons_pcs = self.__find_last_cmp_pc(cmp_constraints, flip_pc_range)
+    def __get_constraint(self, flip_pc_range, bvs, cmp_constraints, nth=0):
+        cmp_cons_pcs = self.__find_last_cmp_pc(cmp_constraints, flip_pc_range, nth=nth)
+        if len(cmp_cons_pcs) == 0:
+            print("[QSYM] Trying to flip constant branch")
         for pc in cmp_cons_pcs:
             path = b"\n".join([cmp_constraints[_pc] for _pc in cmp_constraints if _pc < pc])
             yield to_smt2(bvs, path + b'\n' + negate_smt2(cmp_constraints[pc]))
 
     # conduct concolic execution and flip constraints in flip_pc_range while preserving others
-    def flip_it(self, testcase_content, flip_pc_range, qemu_instr_obj=None, testcase_fn=None):
+    def flip_it(self, testcase_content, flip_pc_range, nth=0, qemu_instr_obj=None, testcase_fn=None):
+        if qemu_instr_obj and testcase_fn:
+            qemu_instr_obj.add_solved_path(testcase_fn, flip_pc_range, nth=nth)
         result = self.__get_result(testcase_content)
-        print(result)
         bvs, cmp_constraint = self.__parse_output(result)
         has_solution = False
 
-        for to_be_solved in self.__get_constraint(flip_pc_range, bvs, cmp_constraint):
+        for to_be_solved in self.__get_constraint(flip_pc_range, bvs, cmp_constraint, nth=nth):
             if len(to_be_solved) == 0:
                 print("[Solver] Conc exec gives nothing")
                 continue
-            print(to_be_solved)
-            solution = solve_smt(to_be_solved)
+            solution = solve_smt(to_be_solved, testcase_content)
             if not solution:
                 continue
-            print(f"[QSYM] SAT: {to_be_solved}")
+            print(f"[QSYM] SAT")
             has_solution = True
             yield solution
         if not has_solution and qemu_instr_obj and testcase_fn:
-            qemu_instr_obj.add_unsolvable_path(testcase_fn, flip_pc_range)
+            qemu_instr_obj.add_unsolvable_path(testcase_fn, flip_pc_range, nth=nth)
 
 
 if __name__ == "__main__":

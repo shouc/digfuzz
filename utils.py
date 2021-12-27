@@ -22,8 +22,8 @@ def qsym_host_provide_permission(remote_path):
 
 
 def setup():
-    os.system("gcc -c qemu_qsym_harness.c -no-pie -o driver.o")
+    os.system("gcc -c -g qemu_qsym_harness.c -no-pie -o driver.o")
 
 
 def compile_harness(obj_loc):
-    os.system(f"gcc {obj_loc} driver.o -no-pie -o {config.LOCAL_UNINSTRUMENTED_EXEC_PATH}")
+    os.system(f"gcc {obj_loc} driver.o -no-pie -g -o {config.LOCAL_UNINSTRUMENTED_EXEC_PATH}")

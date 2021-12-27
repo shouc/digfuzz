@@ -4,7 +4,7 @@ import instr_interface
 import pwn
 import config
 import os
-
+import angr
 import utils
 
 
@@ -63,38 +63,53 @@ class QEMUInstr(instr_interface.Instrumentation):
             if len(line_arr) == 1:
                 record_next = True
                 driver_part = False
-            if len(line_arr) == 1 and ("<main>" in line_arr[-1] or "<__libc_csu" in line_arr[-1]):
+            if len(line_arr) == 1 and ("<main>" in line_arr[-1]
+                                       or "<__libc_csu" in line_arr[-1]
+                                       or "@plt>" in line_arr[-1]):
+                pc = int("0x" + line_arr[0].split(" ")[0].replace(" ", ""), 16)
+                self.__non_comp_bb.add(pc)
                 driver_part = True
 
     def __add_to_execution_tree(self, trace, file_name):
-        last_node = None
         last_addr = 0
         if file_name not in self.corpus_traces:
             self.corpus_traces[file_name] = []
-
+        hit_counts = {}
+        trace = list(trace)
         for addr in trace:
+            edge = (last_addr, addr)
+            hit_counts[edge] = hit_counts[edge] + 1 if edge in hit_counts else 1
+
+            # init node
             if addr not in self.execution_tree:
                 self.execution_tree[addr] = instr_interface.Node()
                 self.execution_tree[addr].addr = addr
                 if addr not in self.__non_comp_bb:
                     self.execution_tree[addr].is_comp = True
-                self.execution_tree[addr].addr_range = (0, 1e10)
-            # refine addr range
-            addr_range = self.execution_tree[addr].addr_range
-            if addr_range[1] - addr_range[0] >  addr - last_addr:
-                self.execution_tree[addr].addr_range = (last_addr, addr)
-            last_addr = addr
+                self.execution_tree[addr].addr_range = (addr, addr + self.basic_block[addr])
+
+            # update children
             current_node = self.execution_tree[addr]
-            if last_node is not None and (last_node.left != current_node and last_node.right != current_node):
-                if last_node.left is None:
-                    last_node.left = current_node
-                elif last_node.right is None:
-                    last_node.right = current_node
-                else:
-                    print("[Exec Tree] More than 2 children for a node :(")
+            if last_addr != 0 and addr not in self.execution_tree[last_addr].children:
+                self.execution_tree[last_addr].children.add(addr)
             current_node.led_by = file_name
             self.corpus_traces[file_name].append(current_node)
-            last_node = current_node
+            last_addr = addr
+
+        # setup edge hitcount
+        last_addr = None
+        for addr in trace:
+            if not last_addr:
+                last_addr = addr
+                continue
+            edge = (last_addr, addr)
+            hit_count = hit_counts[edge]
+            last_node = self.execution_tree[last_addr]
+            if addr in last_node.max_encounter_child:
+                last_node.max_encounter_child[addr].add(hit_count)
+            else:
+                last_node.max_encounter_child[addr] = {hit_count}
+            last_addr = addr
 
     def __build_execution_tree(self, new_testcase_filenames):
         for filename in new_testcase_filenames:
@@ -135,12 +150,12 @@ class QEMUInstr(instr_interface.Instrumentation):
 
 
 if __name__ == "__main__":
-
-    code_loc = "test.c"
-    os.system(f"gcc -c {code_loc} -no-pie -o {code_loc}.o")
-
-    utils.setup()
-    utils.compile_harness(f"{code_loc}.o")
+    #
+    # code_loc = "test.c"
+    # os.system(f"gcc -c {code_loc} -no-pie -o {code_loc}.o")
+    #
+    # utils.setup()
+    # utils.compile_harness(f"{code_loc}.o")
     uninstrumented_executable = "harness"
 
     _executor = STDINExecutorQEMU(config.QEMU_BIN, uninstrumented_executable)

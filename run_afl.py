@@ -5,11 +5,14 @@ import os
 import config
 import utils
 
-if len(sys.argv) > 1:
+if len(sys.argv) > 1 and sys.argv[1].endswith(".o"):
     utils.compile_harness(sys.argv[1])
+elif len(sys.argv) > 1:
+    os.system(f"cp {sys.argv[1]} ./harness")
 else:
     code_loc = "test.c"
-    os.system(f"gcc -c {code_loc} -no-pie -o {code_loc}.o")
+    utils.setup()
+    os.system(f"gcc -g -c {code_loc} -no-pie -o {code_loc}.o")
     utils.compile_harness(f"{code_loc}.o")
 
 processes = []

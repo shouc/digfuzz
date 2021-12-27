@@ -26,11 +26,48 @@ import os
 #   clang -c -g angr_harness.c -o angr_harness.o
 #   clang -g angr_harness.o test.cc -o test.angr
 
-
-class STDINExecutorLLVM:
+class GDBExecutor:
     EXTRACT_START = re.compile(b"starts at address 0x(.+?) ")
     EXTRACT_END = re.compile(b"and ends at 0x(.+?) ")
 
+    def __init__(self, uninstrumented_path):
+        self.gdb_instance = None
+        self.uninstrumented_path = uninstrumented_path
+        self.cmp_table = {}
+
+    def restart_gdb(self):
+        self.gdb_instance = pwn.process(["gdb", self.uninstrumented_path])
+        self.gdb_instance.recvuntil("(gdb) ")
+
+    def run_gdb(self):
+        if self.gdb_instance is None:
+            self.restart_gdb()
+
+    def execute_gdb_cmd(self, cmd):
+        assert self.gdb_instance
+        self.gdb_instance.sendline(cmd)
+        return self.gdb_instance.recvuntil("(gdb) ").replace(b"\n", b"")
+
+    def get_addr(self, file_loc):
+        if file_loc in self.cmp_table:
+            return self.cmp_table[file_loc]
+        self.run_gdb()
+        real_file_loc = b':'.join(file_loc.split(b':')[:-1])  # todo: fix
+        result = self.execute_gdb_cmd(b"info line " + real_file_loc)  # todo: fix
+        if b"starts at address" in result and b"and ends at" in result:
+            start = self.EXTRACT_START.split(result)
+            end = self.EXTRACT_END.split(result)
+            assert len(start) == 3 and len(end) == 3, "GDB gives something weird"
+            result = [int(b'0x' + start[1], 16), int(b'0x' + end[1], 16)]
+        else:
+            print(result)
+            print(f"[GDB] gdb thinks we give a bad file_loc {real_file_loc}")
+            return None
+        self.cmp_table[file_loc] = result
+        return result
+
+
+class STDINExecutorLLVM:
     def __init__(self, build_dir, uninstrumented_path, instrumented_path):
         self.instance = None
         self.build_dir = build_dir
@@ -59,19 +96,6 @@ class STDINExecutorLLVM:
             return 0, False
         return result[8:-1], True
 
-    def restart_gdb(self):
-        self.gdb_instance = pwn.process(["gdb", self.uninstrumented_path])
-        self.gdb_instance.recvuntil("(gdb) ")
-
-    def run_gdb(self):
-        if self.gdb_instance is None:
-            self.restart_gdb()
-
-    def execute_gdb_cmd(self, cmd):
-        assert self.gdb_instance
-        self.gdb_instance.sendline(cmd)
-        return self.gdb_instance.recvuntil("(gdb) ").replace(b"\n", b"")
-
 
 class LLVMInstr(instr_interface.Instrumentation):
     def __init__(self, executor, trace_directory="/tmp/digfuzz"):
@@ -80,25 +104,7 @@ class LLVMInstr(instr_interface.Instrumentation):
         self.corpus_traces = {}
         self.cmp_table = {}
         self.visited_trace = set()
-
-    def __get_angr_addr(self, file_loc):
-        if file_loc in self.cmp_table:
-            return self.cmp_table[file_loc]
-        self.executor.run_gdb()
-        real_file_loc = b':'.join(file_loc.split(b':')[:-1])  # todo: fix
-        result = self.executor.execute_gdb_cmd(b"info line " +
-                    real_file_loc.replace(self.executor.build_dir.encode('ascii'), b""))
-        if b"starts at address" in result and b"and ends at" in result:
-            start = self.executor.EXTRACT_START.split(result)
-            end = self.executor.EXTRACT_END.split(result)
-            assert len(start) == 3 and len(end) == 3, "GDB gives something weird"
-            result = [int(b'0x' + start[1], 16), int(b'0x' + end[1], 16)]
-        else:
-            print(result)
-            print(f"[GDB] gdb thinks we give a bad file_loc {real_file_loc}")
-            return None
-        self.cmp_table[file_loc] = result
-        return result
+        self.gdb = GDBExecutor(executor.uninstrumented_path)
 
     def __add_to_execution_tree(self, trace, file_name):
         last_node = None
@@ -113,7 +119,7 @@ class LLVMInstr(instr_interface.Instrumentation):
                 self.execution_tree[addr].addr = addr
                 self.execution_tree[addr].is_comp = is_cmp
                 if file_loc:
-                    self.execution_tree[addr].angr_addr_range = self.__get_angr_addr(file_loc)
+                    self.execution_tree[addr].angr_addr_range = self.gdb.get_addr(file_loc)
             current_node = self.execution_tree[addr]
             if last_node is not None and (last_node.left != current_node and last_node.right != current_node):
                 if last_node.left is None:
