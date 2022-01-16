@@ -1,0 +1,390 @@
+diff --git a/Dockerfile b/Dockerfile
+index 3c99259..c9425af 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -10,3 +10,6 @@ COPY . /workdir/qsym
+ 
+ RUN ./setup.sh
+ RUN pip install .
++RUN cd /workdir/qsym/qsym/pintool && make -j${nproc}
++RUN mkdir /tmp/in
++RUN mkdir /tmp/out
+\ No newline at end of file
+diff --git a/qsym/pintool/solver.cpp b/qsym/pintool/solver.cpp
+index 147334f..b50c5a1 100644
+--- a/qsym/pintool/solver.cpp
++++ b/qsym/pintool/solver.cpp
+@@ -127,9 +127,9 @@ void Solver::add(z3::expr expr) {
+ z3::check_result Solver::check() {
+   uint64_t before = getTimeStamp();
+   z3::check_result res;
+-  LOG_STAT(
+-      "SMT: { \"solving_time\": " + decstr(solving_time_) + ", "
+-      + "\"total_time\": " + decstr(before - start_time_) + " }\n");
++  // LOG_STAT(
++  //     "SMT: { \"solving_time\": " + decstr(solving_time_) + ", "
++  //     + "\"total_time\": " + decstr(before - start_time_) + " }\n");
+   // LOG_DEBUG("Constraints: " + solver_.to_smt2() + "\n");
+   try {
+     res = solver_.check();
+@@ -146,15 +146,14 @@ z3::check_result Solver::check() {
+   return res;
+ }
+ 
++void Solver::fake_check(){
++  // printf("BB\n%lu%sBBEND\n", last_pc_, solver_.to_smt2().c_str());
++}
++
++
+ bool Solver::checkAndSave(const std::string& postfix) {
+-  if (check() == z3::sat) {
+-    saveValues(postfix);
+-    return true;
+-  }
+-  else {
+-    LOG_DEBUG("unsat\n");
+-    return false;
+-  }
++  fake_check();
++  return true;
+ }
+ 
+ void Solver::addJcc(ExprRef e, bool taken, ADDRINT pc) {
+@@ -174,49 +173,41 @@ void Solver::addJcc(ExprRef e, bool taken, ADDRINT pc) {
+ 
+   // check duplication before really solving something,
+   // some can be handled by range based constraint solving
+-  bool is_interesting;
+-  if (pc == 0) {
+-    // If addJcc() is called by special case, then rely on last_interested_
+-    is_interesting = last_interested_;
+-  }
+-  else
+-    is_interesting = isInterestingJcc(e, taken, pc);
+ 
+-  if (is_interesting)
+-    negatePath(e, taken);
+-  addConstraint(e, taken, is_interesting);
++  negatePath(e, taken);
++  addConstraint(e, taken, false);
+ }
+ 
+ void Solver::addAddr(ExprRef e, ADDRINT addr) {
+-  llvm::APInt v(e->bits(), addr);
+-  addAddr(e, v);
++//  llvm::APInt v(e->bits(), addr);
++//  addAddr(e, v);
+ }
+ 
+ void Solver::addAddr(ExprRef e, llvm::APInt addr) {
+-  if (e->isConcrete())
+-    return;
+-
+-  if (last_interested_) {
+-    reset();
+-    // TODO: add optimize in z3
+-    syncConstraints(e);
+-    if (check() != z3::sat)
+-      return;
+-    z3::expr &z3_expr = e->toZ3Expr();
+-
+-    // TODO: add unbound case
+-    z3::expr min_expr = getMinValue(z3_expr);
+-    z3::expr max_expr = getMaxValue(z3_expr);
+-    solveOne(z3_expr == min_expr);
+-    solveOne(z3_expr == max_expr);
+-  }
+-
+-  addValue(e, addr);
++//  if (e->isConcrete())
++//    return;
++//
++//  if (last_interested_) {
++//    reset();
++//    // TODO: add optimize in z3
++//    syncConstraints(e);
++//    if (check() != z3::sat)
++//      return;
++//    z3::expr &z3_expr = e->toZ3Expr();
++//
++//    // TODO: add unbound case
++//    z3::expr min_expr = getMinValue(z3_expr);
++//    z3::expr max_expr = getMaxValue(z3_expr);
++//    solveOne(z3_expr == min_expr);
++//    solveOne(z3_expr == max_expr);
++//  }
++//
++//  addValue(e, addr);
+ }
+ 
+ void Solver::addValue(ExprRef e, ADDRINT val) {
+-  llvm::APInt v(e->bits(), val);
+-  addValue(e, v);
++//  llvm::APInt v(e->bits(), val);
++//  addValue(e, v);
+ }
+ 
+ void Solver::addValue(ExprRef e, llvm::APInt val) {
+@@ -234,31 +225,31 @@ void Solver::addValue(ExprRef e, llvm::APInt val) {
+ }
+ 
+ void Solver::solveAll(ExprRef e, llvm::APInt val) {
+-  if (last_interested_) {
+-    std::string postfix = "";
+-    ExprRef expr_val = g_expr_builder->createConstant(val, e->bits());
+-    ExprRef expr_concrete = g_expr_builder->createBinaryExpr(Equal, e, expr_val);
+-
+-    reset();
+-    syncConstraints(e);
+-    addToSolver(expr_concrete, false);
+-
+-    if (check() != z3::sat) {
+-      // Optimistic solving
+-      reset();
+-      addToSolver(expr_concrete, false);
+-      postfix = "optimistic";
+-    }
+-
+-    z3::expr z3_expr = e->toZ3Expr();
+-    while(true) {
+-      if (!checkAndSave(postfix))
+-        break;
+-      z3::expr value = getPossibleValue(z3_expr);
+-      add(value != z3_expr);
+-    }
+-  }
+-  addValue(e, val);
++//  if (last_interested_) {
++//    std::string postfix = "";
++//    ExprRef expr_val = g_expr_builder->createConstant(val, e->bits());
++//    ExprRef expr_concrete = g_expr_builder->createBinaryExpr(Equal, e, expr_val);
++//
++//    reset();
++//    syncConstraints(e);
++//    addToSolver(expr_concrete, false);
++//
++//    if (check() != z3::sat) {
++//      // Optimistic solving
++//      reset();
++//      addToSolver(expr_concrete, false);
++//      postfix = "optimistic";
++//    }
++//
++//    z3::expr z3_expr = e->toZ3Expr();
++//    while(true) {
++//      if (!checkAndSave(postfix))
++//        break;
++//      z3::expr value = getPossibleValue(z3_expr);
++//      add(value != z3_expr);
++//    }
++//  }
++//  addValue(e, val);
+ }
+ 
+ UINT8 Solver::getInput(ADDRINT index) {
+@@ -293,58 +284,41 @@ void Solver::readInput() {
+     inputs_.push_back((UINT8)ch);
+ }
+ 
+-std::vector<UINT8> Solver::getConcreteValues() {
+-  // TODO: change from real input
+-  z3::model m = solver_.get_model();
+-  unsigned num_constants = m.num_consts();
+-  std::vector<UINT8> values = inputs_;
+-  for (unsigned i = 0; i < num_constants; i++) {
+-    z3::func_decl decl = m.get_const_decl(i);
+-    z3::expr e = m.get_const_interp(decl);
+-    z3::symbol name = decl.name();
+-
+-    if (name.kind() == Z3_INT_SYMBOL) {
+-      int value = e.get_numeral_int();
+-      values[name.to_int()] = (UINT8)value;
+-    }
+-  }
+-  return values;
+-}
+ 
+ void Solver::saveValues(const std::string& postfix) {
+-  std::vector<UINT8> values = getConcreteValues();
+-
+-  // If no output directory is specified, then just print it out
+-  if (out_dir_.empty()) {
+-    printValues(values);
+-    return;
+-  }
+-
+-  std::string fname = out_dir_+ "/" + toString6digit(num_generated_);
+-  // Add postfix to record where it is genereated
+-  if (!postfix.empty())
+-      fname = fname + "-" + postfix;
+-  ofstream of(fname, std::ofstream::out | std::ofstream::binary);
+-  LOG_INFO("New testcase: " + fname + "\n");
+-  if (of.fail())
+-    LOG_FATAL("Unable to open a file to write results\n");
+-
+-      // TODO: batch write
+-      for (unsigned i = 0; i < values.size(); i++) {
+-        char val = values[i];
+-        of.write(&val, sizeof(val));
+-      }
+-
+-  of.close();
+-  num_generated_++;
++//  std::vector<UINT8> values = getConcreteValues();
++//
++//  // If no output directory is specified, then just print it out
++//  if (out_dir_.empty()) {
++//    printValues(values);
++//    return;
++//  }
++//
++//  std::string fname = out_dir_+ "/" + toString6digit(num_generated_);
++//  // Add postfix to record where it is genereated
++//  if (!postfix.empty())
++//      fname = fname + "-" + postfix;
++//  ofstream of(fname, std::ofstream::out | std::ofstream::binary);
++//  LOG_INFO("New testcase: " + fname + "\n");
++//  if (of.fail())
++//    LOG_FATAL("Unable to open a file to write results\n");
++//
++//      // TODO: batch write
++//      for (unsigned i = 0; i < values.size(); i++) {
++//        char val = values[i];
++//        of.write(&val, sizeof(val));
++//      }
++//
++//  of.close();
++//  num_generated_++;
+ }
+ 
+ void Solver::printValues(const std::vector<UINT8>& values) {
+-  fprintf(stderr, "[INFO] Values: ");
+-  for (unsigned i = 0; i < values.size(); i++) {
+-    fprintf(stderr, "\\x%02X", values[i]);
+-  }
+-  fprintf(stderr, "\n");
++//  fprintf(stderr, "[INFO] Values: ");
++//  for (unsigned i = 0; i < values.size(); i++) {
++//    fprintf(stderr, "\\x%02X", values[i]);
++//  }
++//  fprintf(stderr, "\n");
+ }
+ 
+ z3::expr Solver::getPossibleValue(z3::expr& z3_expr) {
+@@ -352,40 +326,19 @@ z3::expr Solver::getPossibleValue(z3::expr& z3_expr) {
+   return m.eval(z3_expr);
+ }
+ 
+-z3::expr Solver::getMinValue(z3::expr& z3_expr) {
+-  push();
+-  z3::expr value(context_);
+-  while (true) {
+-    if (checkAndSave()) {
+-      value = getPossibleValue(z3_expr);
+-      solver_.add(z3::ult(z3_expr, value));
+-    }
+-    else
+-      break;
+-  }
+-  pop();
+-  return value;
+-}
+ 
+-z3::expr Solver::getMaxValue(z3::expr& z3_expr) {
+-  push();
+-  z3::expr value(context_);
+-  while (true) {
+-    if (checkAndSave()) {
+-      value = getPossibleValue(z3_expr);
+-      solver_.add(z3::ugt(z3_expr, value));
+-    }
+-    else
+-      break;
+-  }
+-  pop();
+-  return value;
++void Solver::addToSolver(ExprRef e, bool taken) {
++  if (!taken)
++    e = g_expr_builder->createLNot(e);
++  add(e->toZ3Expr());
+ }
+ 
+-void Solver::addToSolver(ExprRef e, bool taken) {
+-  e->simplify();
++void Solver::addToSolverDump(ExprRef e, bool taken) {
+   if (!taken)
+     e = g_expr_builder->createLNot(e);
++  z3::solver s(context_);
++  s.add(e->toZ3Expr());
++  std::cout << "FLIPME" << last_pc_ << "\n" << s.to_smt2() << "FLIPMEEND\n";
+   add(e->toZ3Expr());
+ }
+ 
+@@ -518,21 +471,25 @@ bool Solver::isInterestingJcc(ExprRef rel_expr, bool taken, ADDRINT pc) {
+ void Solver::negatePath(ExprRef e, bool taken) {
+   reset();
+   syncConstraints(e);
+-  addToSolver(e, !taken);
+-  bool sat = checkAndSave();
+-  if (!sat) {
+-    reset();
+-    // optimistic solving
+-    addToSolver(e, !taken);
+-    checkAndSave("optimistic");
+-  }
++  addToSolverDump(e, taken);
++
++
++
++
++  fake_check();
++//  if (!sat) {
++//    reset();
++//    // optimistic solving
++//    addToSolver(e, !taken);
++//    checkAndSave("optimistic");
++//  }
+ }
+ 
+ void Solver::solveOne(z3::expr z3_expr) {
+-  push();
+-  add(z3_expr);
+-  checkAndSave();
+-  pop();
++//  push();
++//  add(z3_expr);
++//  checkAndSave();
++//  pop();
+ }
+ 
+ void Solver::checkFeasible() {
+diff --git a/qsym/pintool/solver.h b/qsym/pintool/solver.h
+index e37f091..a7dbcbf 100644
+--- a/qsym/pintool/solver.h
++++ b/qsym/pintool/solver.h
+@@ -65,15 +65,13 @@ protected:
+   void checkOutDir();
+   void readInput();
+ 
+-  std::vector<UINT8> getConcreteValues();
+   void saveValues(const std::string& postfix);
+   void printValues(const std::vector<UINT8>& values);
+ 
+   z3::expr getPossibleValue(z3::expr& z3_expr);
+-  z3::expr getMinValue(z3::expr& z3_expr);
+-  z3::expr getMaxValue(z3::expr& z3_expr);
+ 
+   void addToSolver(ExprRef e, bool taken);
++  void addToSolverDump(ExprRef e, bool taken);
+   void syncConstraints(ExprRef e);
+ 
+   void addConstraint(ExprRef e, bool taken, bool is_interesting);
+@@ -88,6 +86,8 @@ protected:
+   void solveOne(z3::expr);
+ 
+   void checkFeasible();
++
++    void fake_check();
+ };
+ 
+ extern Solver* g_solver;
