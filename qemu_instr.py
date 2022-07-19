@@ -45,23 +45,19 @@ class QEMUInstr(instr_interface.Instrumentation):
     def __grab_non_comp_bb(self):
         floc = f"/tmp/objdump-log-{time.time()}"
         os.system(f"objdump -d {self.executor.uninstrumented_path} > {floc}")
-        record_next = False
         driver_part = False
         for line in open(floc).read().split("\n"):
             line_arr = line.split("\t")
-            if record_next and len(line_arr) > 2 and ("nop" in line_arr[-1]):
-                continue
-            if record_next or driver_part:
+            if (len(line_arr) > 2 and ("call" in line_arr[-1] or
+                                       "jmp" in line_arr[-1] or
+                                       "leave" in line_arr[-1] or
+                                       "ret" in line_arr[-1]))\
+                    or driver_part:
                 if len(line_arr) > 1:
                     pc = int("0x" + line_arr[0].split(":")[0].replace(" ", ""), 16)
                     self.__non_comp_bb.add(pc)
-                record_next = False
-
             # todo: parse instead of direct match
-            if len(line_arr) > 2 and ("call" in line_arr[-1] or "jmp" in line_arr[-1]):
-                record_next = True
             if len(line_arr) == 1:
-                record_next = True
                 driver_part = False
             if len(line_arr) == 1 and ("<main>" in line_arr[-1]
                                        or "<__libc_csu" in line_arr[-1]
@@ -84,9 +80,10 @@ class QEMUInstr(instr_interface.Instrumentation):
             if addr not in self.execution_tree:
                 self.execution_tree[addr] = instr_interface.Node()
                 self.execution_tree[addr].addr = addr
-                if addr not in self.__non_comp_bb:
-                    self.execution_tree[addr].is_comp = True
                 self.execution_tree[addr].addr_range = (addr, addr + self.basic_block[addr])
+                addresses = range(addr, addr + self.basic_block[addr])
+                if self.__non_comp_bb.isdisjoint(addresses):
+                    self.execution_tree[addr].is_comp = True
 
             # update children
             current_node = self.execution_tree[addr]
@@ -164,5 +161,13 @@ if __name__ == "__main__":
         fp.write(b"kbcdeffx")
     with open("/tmp/qemu2-test", "wb+") as fp:
         fp.write(b"")
-    qemu.build_execution_tree(["/tmp/qemu1-test", "/tmp/qemu2-test"])
+
+    def get_new_testcase_filenames():
+        result = []
+        for i in os.listdir(config.AFL_CORPUS_PATH):
+            if i.startswith("."):
+                continue
+            result.append(f"{config.AFL_CORPUS_PATH}/{i}")
+        return result
+    qemu.build_execution_tree(get_new_testcase_filenames())
     qemu.dump_execution_tree()

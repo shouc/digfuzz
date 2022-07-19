@@ -15,7 +15,7 @@ REMOTE_UNINSTRUMENTED_EXEC_PATH = "/tmp/harness"
 QEMU_BIN = "./qemu_stdout"
 
 DUMPER_PATH = "./dumper"
-SHM_KEY = f"tuba.shm"
+SHM_KEY = f"bz.shm"
 
 QEMU_TIMEOUT = 30
 QSYM_TIMEOUT = 30
@@ -29,7 +29,7 @@ AFL_MASTER_NAME = "m"
 AFL_CORPUS_PATH = f"{AFL_OUT_PATH}/{AFL_MASTER_NAME}/queue"  # the directory of the afl master corpus
 
 # QSYM Remote setup
-USE_SSH = False
+USE_SSH = True
 if not USE_SSH:
     os.system(f"mkdir /tmp/digfuzz && cp {LOCAL_UNINSTRUMENTED_EXEC_PATH} /tmp/digfuzz/harness")
     PIN_SH = "/workdir/qsym/third_party/pin-2.14-71313-gcc.4.4.7-linux/pin.sh"  # the location of qsym script remote
@@ -38,7 +38,7 @@ if not USE_SSH:
     QSYM_CMD = ["docker", "-v", "/tmp/digfuzz:/tmp/digfuzz", QSYM_IMAGE_NAME]
 
 else:
-    QSYM_HOST = '54.245.74.219'
+    QSYM_HOST = '18.237.37.59'
     QSYM_UN = 'ubuntu'
     QSYM_KEYFILE = "./seem-priv-key.PEM"
     QSYM_SSH_CONN = pwn.ssh(host=QSYM_HOST, user=QSYM_UN, keyfile=QSYM_KEYFILE)

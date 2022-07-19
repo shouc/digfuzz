@@ -4,10 +4,10 @@ import qemu_instr
 
 _executor = qemu_instr.STDINExecutorQEMU(config.QEMU_BIN, config.LOCAL_UNINSTRUMENTED_EXEC_PATH)
 qemu = qemu_instr.QEMUInstr(_executor, config.DUMPER_PATH, shm_key=config.SHM_KEY)
-tests = list(filter(lambda x: "digfuzz" not in x and not x.startswith("."), os.listdir("out/m/queue")))
+tests = list(filter(lambda x: "10000" not in x and not x.startswith("."), os.listdir("out/m/queue")))
 qemu.build_execution_tree(["out/m/queue/" + x for x in tests])
 
-tests = list(filter(lambda x: "digfuzz" in x and not x.startswith("."), os.listdir("out/m/queue")))
+tests = list(filter(lambda x: "10000" in x and not x.startswith("."), os.listdir("out/m/queue")))
 
 for filename in ["out/m/queue/" + x for x in tests]:
     with open(filename, "rb") as fp:

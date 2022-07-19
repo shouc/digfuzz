@@ -58,7 +58,9 @@ def solve_smt(smt, orig):
         for idx, sol in result:
             idx = bvs.index(idx)
             if idx >= len(orig):
+                print(smt)
                 print(idx, len(orig))
+                orig.append(int(sol.__str__()))
                 continue
             orig[idx] = int(sol.__str__())
         return bytes(orig)
@@ -81,6 +83,15 @@ class QSYMConcolicExecutor:
         self.execution_tree = None
         self.qsym_instance = None
         self.__run_qsym()
+        self.__cache = {}
+
+    def __set_cache(self, testcase_fn, bvs, cmp_constraints):
+        self.__cache[testcase_fn] = (bvs, cmp_constraints)
+
+    def __get_cache(self, testcase_fn, handler, *args):
+        if testcase_fn in self.__cache:
+            return self.__cache[testcase_fn]
+        return handler(*args)
 
     def update_exec_tree(self, tree):
         self.execution_tree = tree
@@ -103,6 +114,11 @@ class QSYMConcolicExecutor:
 
     def __get_result(self, corpus_content):
         try:
+            # todo: dont restart qsym
+            self.qsym_instance.kill()
+            self.__run_qsym()
+            #
+
             self.qsym_instance.sendline(corpus_content)
             start_time = time.time()
             result = self.qsym_instance.recvuntil("EXECDONE", timeout=config.QSYM_TIMEOUT)
@@ -149,14 +165,11 @@ class QSYMConcolicExecutor:
     @staticmethod
     def __find_last_cmp_pc(cmp_constraints: dict, pc_wanted_range, nth=0):
         result = []
-        current_in_range_max = -1
         for pc in cmp_constraints:
             if pc_wanted_range[0] < pc < pc_wanted_range[1]:
-                if pc < current_in_range_max:
-                    nth -= 1
-                current_in_range_max = max(pc, current_in_range_max)
                 if nth == 0:
                     result.append(pc)
+                nth -= 1
         return result
 
     # find a path node to stop => find a cmp cons => flip cmp cons & concat
@@ -169,11 +182,15 @@ class QSYMConcolicExecutor:
             yield to_smt2(bvs, path + b'\n' + negate_smt2(cmp_constraints[pc]))
 
     # conduct concolic execution and flip constraints in flip_pc_range while preserving others
-    def flip_it(self, testcase_content, flip_pc_range, nth=0, qemu_instr_obj=None, testcase_fn=None):
+    def flip_it(self, testcase_content, flip_pc_range, nth=0, qemu_instr_obj=None, testcase_fn=""):
         if qemu_instr_obj and testcase_fn:
             qemu_instr_obj.add_solved_path(testcase_fn, flip_pc_range, nth=nth)
-        result = self.__get_result(testcase_content)
-        bvs, cmp_constraint = self.__parse_output(result)
+        if testcase_fn not in self.__cache:
+            result = self.__get_result(testcase_content)
+            bvs, cmp_constraint = self.__parse_output(result)
+            self.__set_cache(testcase_fn, bvs, cmp_constraint)
+        else:
+            bvs, cmp_constraint = self.__cache[testcase_fn]
         has_solution = False
 
         for to_be_solved in self.__get_constraint(flip_pc_range, bvs, cmp_constraint, nth=nth):
@@ -191,19 +208,20 @@ class QSYMConcolicExecutor:
 
 
 if __name__ == "__main__":
-    import os
+    # import os
     import utils
-
-    code_loc = "test.c"
-    os.system(f"gcc -c {code_loc} -no-pie -o {code_loc}.o")
-
-    utils.setup()
-    utils.compile_harness(f"{code_loc}.o")
-
+    #
+    # code_loc = "test.c"
+    # os.system(f"gcc -c {code_loc} -no-pie -o {code_loc}.o")
+    #
+    # utils.setup()
+    # utils.compile_harness(f"{code_loc}.o")
+    #
     uninstrumented_executable = "/tmp/qsym_harness"
 
     utils.copy_file_to_qsym_host("harness", uninstrumented_executable)
     utils.qsym_host_provide_permission(uninstrumented_executable)
 
     qsym = QSYMConcolicExecutor(uninstrumented_executable)
-    print(qsym.flip_it(b"abcdeffx", [0x40000 + x for x in [0x12b7, 0x12be]]))
+    for sol in qsym.flip_it(open('./out/m/queue/id:100004,src:100001', "rb").read(), (4247400, 4247489), nth=0):
+        print(sol)
